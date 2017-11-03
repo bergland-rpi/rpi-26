@@ -3,7 +3,6 @@
 #import all of the required modules
 import sys
 import time
-import datetime
 from neopixel import *
 import Adafruit_MCP9808.MCP9808 as MCP9808
 from tentacle_pi.TSL2561 import TSL2561
@@ -77,7 +76,7 @@ def convertInt(dict,intlist):
     for i in intlist:
         dict[i]=int(dict[i])
 
-floatlist=["onTime", "offTime", "deltaOn", "deltaOff", "goalLux", "deltaGoalLux", "luxCalibrationOffset", "checkTime", "highAlarm", "lowAlarm", "Pulse_on", "Pulse_off", "Ramp_ontime", "Ramp_offtime", "heatOn", "heatOff", "color2_offtime", "color3_offtime"]
+floatlist=["onTime", "offTime", "checkTime", "highAlarm", "lowAlarm", "Pulse_on", "Pulse_off", "Ramp_ontime", "Ramp_offtime", "heatOn", "heatOff", "color2_offtime", "color3_offtime"]
 def convertFloat(dict,floatlist):
     for f in floatlist:
         dict[f]=float(dict[f])
@@ -92,7 +91,7 @@ def makeOutWriteable(C):
     return WRTR
 
 def writeHeader(WRTR, C):    #write a header column in master file
-    WRTR.writerow(["TimeStamp", "Elapsed", "MCP9808Temp", "SHT31Temp", "Humidity", "Lux", "Lights", "Time_in_hours", "R", "G", "B", "W", "Heater", "goalLux", "onTime", "OffTime"])
+    WRTR.writerow(["TimeStamp", "Elapsed", "MCP9808Temp", "SHT31Temp", "Humidity", "Lux", "Lights", "Time_in_hours", "R", "G", "B", "W", "Heater"])
     C.flush()
 
 configpath=inputfile
@@ -124,13 +123,9 @@ wrtr=makeOutWriteable(c)
 writeHeader(wrtr, c)
 #determine program start time with current configuration
 programstart=time.time()
-programstartdate=datetime.date.today()
 #indicate that no alarm email has been sent and no time has passed since last alarm
 hasAlarmed=False
 timeSinceAlarm=0
-W=a["W"]
-lights="Off"
-
 
 #start checking the time and performing an infinite loop
 while True:
@@ -169,16 +164,6 @@ while True:
     timeStamp=time.strftime("%Y-%m-%d %H:%M:%S", now) #break time into H, M, S
     print timeStamp
 
-    #calculate date and elapsed number of days since program started
-    today=datetime.date.today()
-    elapseddays=(today-programstartdate).days
-
-    #adjust onTime and offTime as needed:
-    
-    onTime=a["onTime"]+a["deltaOn"]/60*float(elapseddays)
-    offTime=a["offTime"]+a["deltaOff"]/60*float(elapseddays)
-    goalLux=a["goalLux"]+a["deltaGoalLux"]*float(elapseddays)
-
     #apply calculation to time to determine time in hours as a decimal
     hour= float(time.strftime("%H "))
     minute= float(time.strftime("%M "))
@@ -192,7 +177,7 @@ while True:
     if lastday == 0 and os.path.isfile(dailyfilename)==False : #program is starting for first time and file doesn't exist; make new file
         df =(open(dailyfilename, 'wb'))
         dfwrtr = csv.writer(df)
-        dfwrtr.writerow(["TimeStamp", "Elapsed", "MCP9808Temp", "SHT31Temp", "Humidity", "Lux", "Lights", "Time_in_hours", "R", "G", "B", "W", "Heater", "goalLux", "onTime", "offTime"])
+        dfwrtr.writerow(["TimeStamp", "Elapsed", "MCP9808Temp", "SHT31Temp", "Humidity", "Lux", "Lights", "Time_in_hours", "R", "G", "B", "W", "Heater"])
         df.flush()
     elif lastday == 0 and os.path.isfile(dailyfilename) == True :#program is starting but file already exists; append
         df =(open(dailyfilename, 'a'))
@@ -200,7 +185,7 @@ while True:
     elif lastday != day :#day has turned over; make a new file
         df=(open(dailyfilename, 'wb'))
         dfwrtr = csv.writer(df)
-        dfwrtr.writerow(["TimeStamp", "Elapsed", "MCP9808Temp", "SHT31Temp", "Humidity", "Lux", "Lights", "Time_in_hours", "R", "G", "B", "W", "Heater", "goalLux", "onTime", "offTime"])
+        dfwrtr.writerow(["TimeStamp", "Elapsed", "MCP9808Temp", "SHT31Temp", "Humidity", "Lux", "Lights", "Time_in_hours", "R", "G", "B", "W", "Heater"])
         df.flush()
     else:
         df =(open(dailyfilename, 'a'))
@@ -224,18 +209,7 @@ while True:
     print "SHT31 Humidity is", SHT31reading[1]
     currlux=tsl.lux()
     print "Lux is", currlux
-    if lights == "Off" :
-        next
-    elif currlux < (goalLux - 1) :
-        W += 1
-        print "lux too low, increasing lux"
-    elif currlux > (goalLux + 1)   :
-        W -= 1
-        print "lux too high, decreasing lux"
-    else:
-        print "Lux ok"
-        next
-    print "W = ", W
+
     #Send email if temperature is out of range
     if hasAlarmed==True:
         timeSinceAlarm=time.time()-alarmTime
@@ -288,17 +262,17 @@ while True:
         currW=tempW
 
     #then check if lights are on main cycle
-    elif onTime <= time_in_hours < offTime:
+    elif a["onTime"] <= time_in_hours < a["offTime"]:
         print ' Lights on!'
         lights="on, main"
         GPIO.output(16, True)
         for i in range(LED_COUNT):
-            strip.setPixelColor(i,Color(a["G"], a["R"], a["B"], W)) #sets LEDs to main color
+            strip.setPixelColor(i,Color(a["G"], a["R"], a["B"], a["W"])) #sets LEDs to main color
             strip.show()
         currR=a["R"]
         currG=a["G"]
         currB=a["B"]
-        currW=W
+        currW=a["W"]
 
     #then check if lights should be on color2
     elif a["color2_used"]=="True" and a["offTime"] <= time_in_hours < a["color2_offtime"]:
@@ -335,9 +309,9 @@ while True:
         tempR=int(float(a["R"])*fade) #calculate a red value based on proporition of ramping completed
         tempG=int(float(a["G"])*fade) #calculate a green value based on proporition of ramping completed
         tempB=int(float(a["B"])*fade) #calculate a blue value based on proporition of ramping completed
-        tempW=int(float(W*fade)) #calculate a white value based on proporition of ramping completed
-        GPIO.output(16, True)
+        tempW=int(float(a["W"])*fade) #calculate a white value based on proporition of ramping completed
         for i in range(a["LED_COUNT"]):
+            GPIO.output(16, True)
             strip.setPixelColor(i,Color(tempG,tempR,tempB,tempW))
             strip.show()
         currR=tempR
@@ -398,8 +372,8 @@ while True:
 
     #write all the current data to a new line in data file
     
-    wrtr.writerow([timeStamp, elapsedtime, currtemp, SHT31reading[0], SHT31reading[1], currlux, lights, time_in_hours, currR, currG, currB, currW, heater, goalLux, onTime, offTime])
-    dfwrtr.writerow([timeStamp, elapsedtime, currtemp, SHT31reading[0], SHT31reading[1], currlux, lights, time_in_hours, currR, currG, currB, currW, heater, goalLux, onTime, offTime])
+    wrtr.writerow([timeStamp, elapsedtime, currtemp, SHT31reading[0], SHT31reading[1], currlux, lights, time_in_hours, currR, currG, currB, currW, heater])
+    dfwrtr.writerow([timeStamp, elapsedtime, currtemp, SHT31reading[0], SHT31reading[1], currlux, lights, time_in_hours, currR, currG, currB, currW, heater])
     c.flush()
     df.flush()
 
@@ -407,5 +381,5 @@ while True:
     lastday=day
 
     # determine how much time to wait so that loop is executed based on checkTime seconds
-    time.sleep(a["checkTime"] - ((time.time() - loopstart) % 60.0))
+time.sleep(a["checkTime"] - ((time.time() - loopstart) % 60.0))
 
